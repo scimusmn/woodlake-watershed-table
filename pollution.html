@@ -1,0 +1,140 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>pollution</title>
+    <script>
+
+//let field = [ ...Array(64).keys() ].map(x => [ ...Array(64).keys() ].map(y => [y < 32 ? 10 : -10, x < 32 ? -10 : 10 ]));
+
+let field = [ ...Array(64).keys() ].map(x => [ ...Array(64).keys() ].map(y => [0, 0]));
+
+
+function lerp(a, b, x) {
+  return a*(1-x) + b*x;
+}
+
+function vlerp([ax, ay], [bx, by], t) {
+  return [ lerp(ax, bx, t), lerp(ay, by, t) ];
+}
+
+
+function interpolate(field, x, y) {
+  const [ fx, fy ] = [ Math.floor(x), Math.floor(y) ];
+  const corners = [ [fx, fy], [fx+1, fy], [fx, fy+1], [fx+1, fy+1] ]
+    .map(([cx, cy]) => (field[cx] ?? [])[cy] ?? [0, 0])
+
+  const lo = vlerp(corners[0], corners[1], x-fx);
+  const hi = vlerp(corners[2], corners[3], x-fx);
+  return vlerp(lo, hi, y-fy);
+}
+
+
+function advect(field, s) {
+  return field.map((col, x) => col.map(([vx, vy], y) => {
+    const [ ax, ay ] = interpolate(field, x-vx, y-vy);
+    return [ (1-s)*vx + s*ax, (1-s)*vy + s*ay ];
+  }));
+}
+
+
+function divGrad(field, x, y) {
+  const v = [ -1, 0, 1 ].map(X => [-1, 0, 1].map(Y => (field[x+X] ?? [])[y+Y] ?? [0,0])).flat();
+  const X = v.map(([x, y]) => x);
+  const Y = v.map(([x, y]) => y);
+
+  return [
+    X[0]-Y[0] - 2*X[1] + X[2]+Y[2] +
+    2*X[3] - 4*X[4] + 2*X[5] +
+    X[6]+Y[6] - 2*X[7] + X[8]-Y[8],
+
+    -X[0]+Y[0] + 2*Y[1] + X[2]+Y[2] +
+    -2*Y[3] - 4*Y[4] - 2*Y[5] +
+    X[6]+Y[6] + 2*Y[7] - X[8]+Y[8]
+  ];
+}
+
+
+function stripDiv(field) {
+  return field.map((col, x) => col.map(([vx, vy], y) => {
+    const [gx, gy] = divGrad(field, x, y);
+    return [vx + 0.125*gx, vy + 0.125*gy];
+  }));
+}
+
+
+function Particle(x, y) {
+  this.x = x;
+  this.y = y;
+  this.vx = Math.random();
+  this.vy = Math.random();
+}
+
+
+Particle.prototype.update = function(field) {
+  const dt = 0.1;
+  const [ fx, fy ] = interpolate(field, this.x, this.y);
+  this.vx = lerp(this.vx, fx, 0.1);
+  this.vy = lerp(this.vy, fy, 0.1);
+  this.x += dt * this.vx;
+  this.y += dt * this.vy;
+}
+
+
+Particle.prototype.draw = function(ctx) {
+  ctx.beginPath();
+  ctx.arc(this.x, this.y, 0.2, 0, 2*Math.PI);
+  ctx.fill();
+}
+
+
+window.onload = () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = canvas.width;
+  document.body.append(canvas);
+  const ctx = canvas.getContext('2d');
+
+  ctx.lineWidth = 0.09;
+  ctx.setTransform(1024/64, 0, 0, 1024/64, 0, 0);
+
+  const drawVector = (x, y, vx, vy, head) => {
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.lineTo(x+vx, y+vy);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x+vx, y+vy, head, 0, 2*Math.PI);
+    ctx.fill();
+  }
+
+  const drawField = (field) => field.forEach((col, x) => col.forEach((v, y) => {
+    drawVector(x, y, v[0], v[1], 0.1);
+  }));
+
+  drawField(field);
+
+  ctx.strokeStyle = '#ff0000';
+  ctx.fillStyle = '#ff0000';
+
+  const particles = [ ...Array(100) ].map(() => new Particle(64*Math.random(), 64*Math.random()));
+
+  function next() {
+    ctx.clearRect(-64, -64, 1024, 1024);
+    field = advect(field, 0.1);
+    field[10][32] = [10, 0];
+    field[54][32] = [-10, 0];
+    for (let i=0; i<50; i++) {
+      field = stripDiv(field);
+    }
+    particles.forEach(p => p.update(field));
+    drawField(field);
+    particles.forEach(p => p.draw(ctx));
+  }
+  setInterval(next, 10);
+};
+    </script>
+  </head>
+  <body></body>
+</html>
