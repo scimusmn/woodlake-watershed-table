@@ -8,11 +8,10 @@ uint8_t getNodeId();
 
 class GenericCanMsg {
   protected:
-  static uint8_t nextId;
   uint8_t id;
   GenericCanMsg *next;
   public:
-  GenericCanMsg();
+  GenericCanMsg(uint8_t id);
   void add(GenericCanMsg *msg);
   void handle(const CAN_message_t *msg);
   void tx();
@@ -28,6 +27,7 @@ class GenericCanMsg {
 
 class WaterLevelMsg : public GenericCanMsg {
   public:
+  WaterLevelMsg() : GenericCanMsg(0) {}
   uint8_t level;
   const char *getName() { return "WaterLevelMsg"; };
   void * getBuffer() { return &level; }

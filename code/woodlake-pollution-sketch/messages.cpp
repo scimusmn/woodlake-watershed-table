@@ -9,15 +9,9 @@ uint8_t getNodeId() {
 }
 
 
-uint8_t GenericCanMsg::nextId = 0;
-
-
-GenericCanMsg::GenericCanMsg()
-: next(nullptr)
-{
-  id = GenericCanMsg::nextId;
-  GenericCanMsg::nextId += 1;
-}
+GenericCanMsg::GenericCanMsg(uint8_t id)
+: id(id), next(nullptr)
+{}
 
 void GenericCanMsg::add(GenericCanMsg *msg) {
   if (next == nullptr) {

@@ -128,10 +128,6 @@ void setup() {
 void loop() {
   static unsigned int t = 0;
 
-  WaterLevelMsg msg;
-  msg.level = 128;
-  msg.tx();
-
   uint8_t level = sin8(t>>3);
   // uint8_t level = 11;
   while (bg.isSwapPending());

@@ -1,124 +1,83 @@
-#include <MatrixHardware_Teensy4_ShieldV5.h>
-#include <SmartMatrix.h>
-#include <FastLED.h>
-#include <math.h>
-#include <stdlib.h>
-#include "pins.h"
-#include "particle.h"
+#define SMM_IMPLEMENTATION
+#include "smm.h"
 #include "messages.h"
+#include "pins.h"
+#include "PolledTimer.h"
 
-#define LED_STRIP_LEN 600
-CRGB strip[LED_STRIP_LEN];
-
-
-#define COLOR_DEPTH 24
-#define MAT_WIDTH 128 
-#define MAT_HEIGHT 64
-#define REFRESH_DEPTH 36
-#define DMA_BUF_ROWS 4
-#define PANEL_TYPE SM_PANELTYPE_HUB75_64ROW_MOD32SCAN
-#define MAT_OPTIONS (SM_HUB75_OPTIONS_NONE)
-#define BG_OPTIONS (SM_BACKGROUND_OPTIONS_NONE)
-
-
-SMARTMATRIX_ALLOCATE_BUFFERS(
-  matrix, MAT_WIDTH, MAT_HEIGHT, 
-  REFRESH_DEPTH, DMA_BUF_ROWS, PANEL_TYPE, MAT_OPTIONS
-);
-
-SMARTMATRIX_ALLOCATE_BACKGROUND_LAYER(bg, MAT_WIDTH, MAT_HEIGHT, COLOR_DEPTH, BG_OPTIONS);
-
-
-uint8_t topography[MAT_WIDTH * MAT_HEIGHT];
-void setupTopography() {
-  memset(topography, 0, sizeof(topography));
-  float X[] = { 32, 40, 60, 92, 66 };
-  float Y[] = { 12, 18, 27, 46, 32 };
-  float A[] = { 100, 50, 150, 30, 150 };
-  float B[] = { 100, 50, 200, 30, 500 };
-  for (int x=0; x<MAT_WIDTH; x++) {
-    for (int y=0; y<MAT_HEIGHT; y++) {
-      for (int i=0; i<5; i++) {
-        float dx = x - X[i];
-        float dy = y - Y[i];
-        int idx = MAT_WIDTH*y + x;
-        uint8_t topo = topography[idx];
-        topography[idx] += A[i]*exp(-(dx*dx + dy*dy)/B[i]);
-        if (topography[idx] < topo) {
-          topography[idx] = 255;
-        }
-      }
+class PollutantButton : public smm::Switch {
+  public:
+  PollutantButton(int pin) : smm::Switch(pin) {}
+  unsigned long pressTime = 0;
+  bool pressed;
+  unsigned long level = 0;
+  void onLow() {
+    pressTime = millis();
+    pressed = true;
+  }
+  void onHigh() {
+    level += millis() - pressTime;
+    pressTime = 0;
+    pressed = false;
+  }
+  unsigned long getLevel() {
+    if (pressed) {
+      return level + millis() - pressTime;
+    } else {
+      return level;
     }
   }
-}
+
+};
 
 
-
-void drawLake(rgb24 *buffer, unsigned int t, uint8_t level) {
-  for (int x=0; x<MAT_WIDTH; x++) {
-    for (int y=0; y<MAT_HEIGHT; y++) {
-      int idx = y*MAT_WIDTH + x;
-      if (topography[idx] >= level) {
-        buffer[idx] = (rgb24){ 0, (sin8(x<<3)>>2) + (sin8(y<<3)>>2), 0xff };
-      }
-    }
+uint8_t lightsState = 0;
+void setLight(int n, int state) {
+  if (state) {
+    lightsState |= 1<<n;
+  } else {
+    lightsState &= ~(1<<n);
   }
+  digitalWrite(SHIFT_LATCH, 0);
+  shiftOut(SHIFT_DATA, SHIFT_CLOCK, MSBFIRST, lightsState);
+  digitalWrite(SHIFT_LATCH, 1);
 }
 
 
-#define N_PARTICLES 512
-Particle orangeParticles[N_PARTICLES];
-Particle yellowParticles[N_PARTICLES];
-Particle redParticles[N_PARTICLES];
-
-
-void activateParticle(Particle *particles, unsigned int lifetime, int x, int y, float v, uint8_t angle) {
-  for (int i=0; i<N_PARTICLES; i++) {
-    if (!particles[i].isActive()) {
-      particles[i].activate(lifetime, x, y, v*cos8(angle), v*sin8(angle));
-      return;
-    }
+class Button : public smm::Switch {
+  public:
+  Button(int n, int pin) : n(n), smm::Switch(pin) {}
+  int n;
+  bool pressed;
+  void onLow() {
+    Serial.print(pin); Serial.println(" pressed!");
+    pressed = true;
   }
-}
-
-// draw individual particle
-void drawParticle(rgb24 *buffer, Particle *p, rgb24 color) {
-  if (p->isActive()) {
-    buffer[MAT_WIDTH*p->getY() + p->getX()] = color;
+  void onHigh() {
+    pressed = false;
   }
-}
-
-// draw all particles
-void drawParticles(rgb24 *buffer) {
-  for (int i=0; i<N_PARTICLES; i++) {
-    drawParticle(buffer, orangeParticles+i, (rgb24){ 0xff, 0x7f, 0x00 });
-    drawParticle(buffer, yellowParticles+i, (rgb24){ 0xff, 0xff, 0x00 });
-    drawParticle(buffer, redParticles+i,    (rgb24){ 0xff, 0x00, 0x00 });
-  }
-}
-
-// update all particles
-void updateParticles(unsigned int level) {
-  for (int i=0; i<N_PARTICLES; i++) {
-    orangeParticles[i].update(topography, MAT_WIDTH, MAT_HEIGHT, level);
-    yellowParticles[i].update(topography, MAT_WIDTH, MAT_HEIGHT, level);
-    redParticles[i].update(topography, MAT_WIDTH, MAT_HEIGHT, level);
-  }
-}
+} button0(0, BUTTON_0)
+, button1(1, BUTTON_1)
+, button2(2, BUTTON_2)
+, button3(3, BUTTON_3)
+, button4(4, BUTTON_4)
+, button5(5, BUTTON_5)
+;
 
 
-// ================================
+
 
 void setup() {
   Serial.begin(115200);
   Serial.println("== boot ==");
-  matrix.addLayer(&bg);
-  matrix.begin();
-  setupTopography();
 
-  FastLED.addLeds<WS2811, LED_STRIP_DATA_PIN, GRB>(strip, LED_STRIP_LEN);
+  pinMode(SHIFT_DATA, OUTPUT);
+  pinMode(SHIFT_CLOCK, OUTPUT);
+  pinMode(SHIFT_LATCH, OUTPUT);
+  digitalWrite(SHIFT_LATCH, 1);
 
-  setupCan(0x00);
+  smm::setup();
+
+  setupCan(0x01);
 
   Serial.println("setup complete.");
   delay(500);
@@ -126,32 +85,18 @@ void setup() {
 
 
 void loop() {
-  static unsigned int t = 0;
-
-  WaterLevelMsg msg;
-  msg.level = 128;
-  msg.tx();
-
-  uint8_t level = sin8(t>>3);
-  // uint8_t level = 11;
-  while (bg.isSwapPending());
-
-  rgb24 *buffer = bg.backBuffer();
-  memset(buffer, 0, MAT_WIDTH * MAT_HEIGHT * sizeof(rgb24));
-
-  // update particles
-  if ((t & 7) == 0) {
-    activateParticle(orangeParticles, N_PARTICLES, 44, 32, 1.0, -32);
-    activateParticle(yellowParticles, N_PARTICLES, 100, 32, 1.0, -32);
-    activateParticle(redParticles, N_PARTICLES, 64, 50, 1.0, 32);
-    updateParticles(level);
-  }
-
-  // draw lake + particles
-  drawLake(buffer, t, level);
-  drawParticles(buffer);
-
-  bg.swapBuffers(false);
-  matrix.countFPS();
-  t += 1;
+  setLight(button0.n, button0.pressed);
+  setLight(button1.n, button1.pressed);
+  setLight(button2.n, button2.pressed);
+  setLight(button3.n, button3.pressed);
+  setLight(button4.n, button4.pressed);
+  setLight(button5.n, button5.pressed);
+  delay(100);
+  // static unsigned long t = 100;
+  // if (t < millis()) {
+  //   t += 100;
+  //   Serial.println(phosphorus.getLevel());
+  // }
+  // phosphorus.interval.update();
+  // printInterval.update();
 }
