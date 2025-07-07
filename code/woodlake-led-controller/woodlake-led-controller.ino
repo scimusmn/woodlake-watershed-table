@@ -1,66 +1,45 @@
 #define SMM_IMPLEMENTATION
+#include <OctoWS2811.h>
 #include "smm.h"
 #include "messages.h"
 #include "pins.h"
 #include "PolledTimer.h"
+#include "pollutant.h"
+#include "strips.h"
 
-class PollutantButton : public smm::Switch {
-  public:
-  PollutantButton(int pin) : smm::Switch(pin) {}
-  unsigned long pressTime = 0;
-  bool pressed;
-  unsigned long level = 0;
-  void onLow() {
-    pressTime = millis();
-    pressed = true;
-  }
-  void onHigh() {
-    level += millis() - pressTime;
-    pressTime = 0;
-    pressed = false;
-  }
-  unsigned long getLevel() {
-    if (pressed) {
-      return level + millis() - pressTime;
-    } else {
-      return level;
-    }
-  }
-
-};
-
-
-uint8_t lightsState = 0;
-void setLight(int n, int state) {
-  if (state) {
-    lightsState |= 1<<n;
-  } else {
-    lightsState &= ~(1<<n);
-  }
-  digitalWrite(SHIFT_LATCH, 0);
-  shiftOut(SHIFT_DATA, SHIFT_CLOCK, MSBFIRST, lightsState);
-  digitalWrite(SHIFT_LATCH, 1);
-}
+#define STRIP_LEN 200
+DMAMEM int displayBuffer[STRIP_LEN*6];
+byte stripPins[] = { 8, 9, 10, 11, 12 };
+OctoWS2811 strip(
+  STRIP_LEN, displayBuffer, nullptr, 
+  WS2811_RGB | WS2811_800kHz, sizeof(stripPins), stripPins
+);
 
 
 class Button : public smm::Switch {
   public:
-  Button(int n, int pin) : n(n), smm::Switch(pin) {}
+  Button(int n, int pin, int startAddr, int endAddr, unsigned int color) 
+  : n(n), path(startAddr, endAddr, color), smm::Switch(pin) {}
+  PollutantPath path;
   int n;
   bool pressed;
   void onLow() {
-    Serial.print(pin); Serial.println(" pressed!");
-    pressed = true;
+    Serial.print(n); Serial.println(" pressed");
+    path.startAccumulating(100);
   }
   void onHigh() {
-    pressed = false;
+    path.stopAccumulating();
   }
-} button0(0, BUTTON_0)
-, button1(1, BUTTON_1)
-, button2(2, BUTTON_2)
-, button3(3, BUTTON_3)
-, button4(4, BUTTON_4)
-, button5(5, BUTTON_5)
+  void u() {
+    path.update();
+    path.render(strip);
+  }
+} button0(0, BUTTON_0, POLLUTANT_0A, POLLUTANT_0B, 0xff0000)
+, button1(1, BUTTON_1, POLLUTANT_0A, POLLUTANT_0B, 0xff0000)
+, button2(2, BUTTON_2, POLLUTANT_0A, POLLUTANT_0B, 0xff0000)
+, button3(3, BUTTON_3, POLLUTANT_0A, POLLUTANT_0B, 0xff0000)
+, button4(4, BUTTON_4, POLLUTANT_0A, POLLUTANT_0B, 0xff0000)
+, button5(5, BUTTON_5, POLLUTANT_0A, POLLUTANT_0B, 0xff0000)
 ;
 
 
@@ -78,6 +57,9 @@ void setup() {
   smm::setup();
 
   setupCan(0x01);
+  strip.begin();
+  memset(displayBuffer, 0, sizeof(displayBuffer));
+  strip.show();
 
   Serial.println("setup complete.");
   delay(500);
@@ -85,18 +67,9 @@ void setup() {
 
 
 void loop() {
-  setLight(button0.n, button0.pressed);
-  setLight(button1.n, button1.pressed);
-  setLight(button2.n, button2.pressed);
-  setLight(button3.n, button3.pressed);
-  setLight(button4.n, button4.pressed);
-  setLight(button5.n, button5.pressed);
-  delay(100);
-  // static unsigned long t = 100;
-  // if (t < millis()) {
-  //   t += 100;
-  //   Serial.println(phosphorus.getLevel());
-  // }
-  // phosphorus.interval.update();
-  // printInterval.update();
+  memset(displayBuffer, 0, sizeof(displayBuffer));
+
+  button0.u();
+
+  strip.show();
 }

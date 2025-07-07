@@ -35,7 +35,7 @@ void PolledTimer::start(void (*fn)(void*), unsigned long t) {
 void PolledTimer::start(void (*fn)(void *), void *data, unsigned long t) {
   endTime = millis() + t;
   this->fn = fn;
-  data = data;
+  this->data = data;
 }
 
 
