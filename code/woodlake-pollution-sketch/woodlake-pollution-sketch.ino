@@ -1,3 +1,4 @@
+#define SMM_IMPLEMENTATION
 #include <MatrixHardware_Teensy4_ShieldV5.h>
 #include <SmartMatrix.h>
 #include <FastLED.h>
@@ -6,6 +7,8 @@
 #include "pins.h"
 #include "particle.h"
 #include "messages.h"
+#include "state.h"
+#include "PolledTimer.h"
 
 #define LED_STRIP_LEN 600
 CRGB strip[LED_STRIP_LEN];
@@ -33,9 +36,9 @@ uint8_t topography[MAT_WIDTH * MAT_HEIGHT];
 void setupTopography() {
   memset(topography, 0, sizeof(topography));
   float X[] = { 32, 40, 60, 92, 66 };
-  float Y[] = { 12, 18, 27, 46, 32 };
-  float A[] = { 100, 50, 150, 30, 150 };
-  float B[] = { 100, 50, 200, 30, 500 };
+  float Y[] = { 32, 32, 32, 46, 32 };
+  float A[] = { 100, 100, 150, 100, 150 };
+  float B[] = { 100, 50, 500, 30, 500 };
   for (int x=0; x<MAT_WIDTH; x++) {
     for (int y=0; y<MAT_HEIGHT; y++) {
       for (int i=0; i<5; i++) {
@@ -53,6 +56,16 @@ void setupTopography() {
 }
 
 
+PollutantState pollutant0;
+PollutantState pollutant1;
+PollutantState pollutant2;
+PollutantState pollutant3;
+
+
+int targetLevel = LAKE_LOW;
+PolledTimer levelTimer;
+
+
 
 void drawLake(rgb24 *buffer, unsigned int t, uint8_t level) {
   for (int x=0; x<MAT_WIDTH; x++) {
@@ -66,47 +79,6 @@ void drawLake(rgb24 *buffer, unsigned int t, uint8_t level) {
 }
 
 
-#define N_PARTICLES 512
-Particle orangeParticles[N_PARTICLES];
-Particle yellowParticles[N_PARTICLES];
-Particle redParticles[N_PARTICLES];
-
-
-void activateParticle(Particle *particles, unsigned int lifetime, int x, int y, float v, uint8_t angle) {
-  for (int i=0; i<N_PARTICLES; i++) {
-    if (!particles[i].isActive()) {
-      particles[i].activate(lifetime, x, y, v*cos8(angle), v*sin8(angle));
-      return;
-    }
-  }
-}
-
-// draw individual particle
-void drawParticle(rgb24 *buffer, Particle *p, rgb24 color) {
-  if (p->isActive()) {
-    buffer[MAT_WIDTH*p->getY() + p->getX()] = color;
-  }
-}
-
-// draw all particles
-void drawParticles(rgb24 *buffer) {
-  for (int i=0; i<N_PARTICLES; i++) {
-    drawParticle(buffer, orangeParticles+i, (rgb24){ 0xff, 0x7f, 0x00 });
-    drawParticle(buffer, yellowParticles+i, (rgb24){ 0xff, 0xff, 0x00 });
-    drawParticle(buffer, redParticles+i,    (rgb24){ 0xff, 0x00, 0x00 });
-  }
-}
-
-// update all particles
-void updateParticles(unsigned int level) {
-  for (int i=0; i<N_PARTICLES; i++) {
-    orangeParticles[i].update(topography, MAT_WIDTH, MAT_HEIGHT, level);
-    yellowParticles[i].update(topography, MAT_WIDTH, MAT_HEIGHT, level);
-    redParticles[i].update(topography, MAT_WIDTH, MAT_HEIGHT, level);
-  }
-}
-
-
 // ================================
 
 void setup() {
@@ -116,9 +88,23 @@ void setup() {
   matrix.begin();
   setupTopography();
 
-  FastLED.addLeds<WS2811, LED_STRIP_DATA_PIN, GRB>(strip, LED_STRIP_LEN);
-
   setupCan(0x00);
+
+  pollutant0.x = 32; pollutant0.y = 40;
+  pollutant0.angle = -32;
+  pollutant0.r = 0xff; pollutant0.g = 0xff; pollutant0.b = 0xff;
+  
+  pollutant1.x = 72; pollutant1.y = 32;
+  pollutant1.angle = 128;
+  pollutant1.r = 0x00; pollutant1.g = 0xff; pollutant1.b = 0;
+  
+  pollutant2.x = 70; pollutant2.y = 40;
+  pollutant2.angle = -96;
+  pollutant2.r = 0xff; pollutant2.g = 0x00; pollutant2.b = 0xff;
+  
+  pollutant3.x = 70; pollutant3.y = 30;
+  pollutant3.angle = 96;
+  pollutant3.r = 0xff; pollutant3.g = 0xff; pollutant3.b = 0x00;
 
   Serial.println("setup complete.");
   delay(500);
@@ -127,8 +113,9 @@ void setup() {
 
 void loop() {
   static unsigned int t = 0;
+  static int level = targetLevel;
 
-  uint8_t level = sin8(t>>3);
+  levelTimer.update();
   // uint8_t level = 11;
   while (bg.isSwapPending());
 
@@ -137,15 +124,24 @@ void loop() {
 
   // update particles
   if ((t & 7) == 0) {
-    activateParticle(orangeParticles, N_PARTICLES, 44, 32, 1.0, -32);
-    activateParticle(yellowParticles, N_PARTICLES, 100, 32, 1.0, -32);
-    activateParticle(redParticles, N_PARTICLES, 64, 50, 1.0, 32);
-    updateParticles(level);
+    Serial.print(level); Serial.print(" "); Serial.println(targetLevel);
+    if (level < targetLevel) {
+      level += 1;
+    } else if (level > targetLevel) {
+      level -= 1;
+    }
+    pollutant0.update(topography, MAT_WIDTH, MAT_HEIGHT, level);
+    pollutant1.update(topography, MAT_WIDTH, MAT_HEIGHT, level);
+    pollutant2.update(topography, MAT_WIDTH, MAT_HEIGHT, level);
+    pollutant3.update(topography, MAT_WIDTH, MAT_HEIGHT, level);
   }
 
   // draw lake + particles
   drawLake(buffer, t, level);
-  drawParticles(buffer);
+  pollutant0.render(buffer, MAT_WIDTH, MAT_HEIGHT);
+  pollutant1.render(buffer, MAT_WIDTH, MAT_HEIGHT);
+  pollutant2.render(buffer, MAT_WIDTH, MAT_HEIGHT);
+  pollutant3.render(buffer, MAT_WIDTH, MAT_HEIGHT);
 
   bg.swapBuffers(false);
   matrix.countFPS();

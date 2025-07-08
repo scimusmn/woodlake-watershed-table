@@ -1,6 +1,7 @@
 #pragma once
 #include <OctoWS2811.h>
 #include "PolledTimer.h"
+#include "messages.h"
 
 class PollutantPath {
   private:
@@ -17,7 +18,7 @@ class PollutantPath {
   void startAccumulating(unsigned long ms);
   void stopAccumulating();
   void flush(unsigned long ms);
-  void update();
+  void update(int n);
   void render(OctoWS2811 &strip);
   void showPixel(OctoWS2811 &strip, int n, unsigned long color);
   void advance();
@@ -69,9 +70,11 @@ void PollutantPath::stopAccumulating() {
     interval.clear();
   }
 }
-void PollutantPath::update() {
+void PollutantPath::update(int n) {
   interval.update();
   if (offset > length()) {
+    PollutantOutputMsg msg(n, amt);
+    msg.tx();
     flowing = false;
     offset = 0;
     amt = 0;

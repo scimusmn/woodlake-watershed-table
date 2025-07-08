@@ -39,7 +39,7 @@ class Button : public smm::Switch {
     path.flush(ms/2);
   }
   void u() {
-    path.update();
+    path.update(n);
     path.render(strip);
   }
 } button0(0, BUTTON_0, POLLUTANT_0A, POLLUTANT_0B, 0xffffff,100)

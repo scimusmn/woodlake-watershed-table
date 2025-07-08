@@ -25,15 +25,34 @@ class GenericCanMsg {
 };
 
 
-class WaterLevelMsg : public GenericCanMsg {
-  public:
-  WaterLevelMsg() : GenericCanMsg(0) {}
+enum CanMsgType {
+  WATER_LEVEL,
+  POLLUTANT_OUTPUT,
+};
+
+
+struct WaterLevelMsg : public GenericCanMsg {
   uint8_t level;
-  const char *getName() { return "WaterLevelMsg"; };
-  void * getBuffer() { return &level; }
-  void setBuffer(const void *buf) { level = *(uint8_t*)buf; }
-  size_t getBufferSize() { return sizeof(level); }
-  void rx() {
-    Serial.print("set water level to "); Serial.println(level);
-  }
+
+  WaterLevelMsg();
+  const char *getName();
+  void * getBuffer();
+  void setBuffer(const void *buf);
+  size_t getBufferSize();
+  void rx();
+};
+
+
+struct PollutantOutputMsg : public GenericCanMsg {
+  uint8_t pollutantId;
+  uint8_t amt;
+  uint8_t buf[2];
+
+  PollutantOutputMsg();
+  PollutantOutputMsg(int pollutantId, int amt);
+  const char *getName();
+  void *getBuffer();
+  void setBuffer(const void *buf);
+  size_t getBufferSize();
+  void rx();
 };
