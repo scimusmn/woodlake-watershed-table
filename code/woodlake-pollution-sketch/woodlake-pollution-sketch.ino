@@ -1,40 +1,236 @@
 #define SMM_IMPLEMENTATION
-#include <MatrixHardware_Teensy4_ShieldV5.h>
-#include <SmartMatrix.h>
-#include <FastLED.h>
 #include <math.h>
 #include <stdlib.h>
 #include "pins.h"
-#include "particle.h"
-#include "messages.h"
-#include "state.h"
-#include "PolledTimer.h"
+#include "matrix.h"
+#include "texture.h"
+#include "color.h"
 
-#define LED_STRIP_LEN 600
-CRGB strip[LED_STRIP_LEN];
-
-
-#define COLOR_DEPTH 24
-#define MAT_WIDTH 128 
+#define MAT_WIDTH 128
 #define MAT_HEIGHT 64
-#define REFRESH_DEPTH 36
-#define DMA_BUF_ROWS 4
-#define PANEL_TYPE SM_PANELTYPE_HUB75_64ROW_MOD32SCAN
-#define MAT_OPTIONS (SM_HUB75_OPTIONS_NONE)
-#define BG_OPTIONS (SM_BACKGROUND_OPTIONS_NONE)
 
 
-SMARTMATRIX_ALLOCATE_BUFFERS(
-  matrix, MAT_WIDTH, MAT_HEIGHT, 
-  REFRESH_DEPTH, DMA_BUF_ROWS, PANEL_TYPE, MAT_OPTIONS
-);
+int clamp(int x, int lo, int hi) {
+  if (x < lo) {
+    return lo;
+  } else if (x > hi) {
+    return hi;
+  } else {
+    return x;
+  }
+}
 
-SMARTMATRIX_ALLOCATE_BACKGROUND_LAYER(bg, MAT_WIDTH, MAT_HEIGHT, COLOR_DEPTH, BG_OPTIONS);
+
+uint8_t adds(uint8_t a, uint8_t b) {
+  int value = (int)a + (int)b;
+  if (value > 0xff) {
+    return 0xff;
+  } else {
+    return value;
+  }
+}
 
 
-uint8_t topography[MAT_WIDTH * MAT_HEIGHT];
+uint8_t subs(uint8_t a, uint8_t b) {
+  int value = (int)a - (int)b;
+  if (value < 0) {
+    return 0;
+  } else {
+    return value;
+  }
+}
+
+
+int rand8() {
+  return (rand()>>4) & 0xff;
+}
+
+
+struct DiffusionCircle {
+  int x, y, r, vx, vy, vr;
+  int active = 1;
+  int cycle = 0;
+
+  int biased_step(int v) {
+    int delta = v + rand8();
+    if (delta < 85) {
+      return -1;
+    } else if (delta > 170) {
+      return 1;
+    } else {
+      return 0;
+    }
+  }
+
+  int update(int *ages, int w, int h, int time, int period) {
+    if (!active) {
+      return 0;
+    }
+
+    cycle += 1;
+    if (cycle < period) {
+      return 1;
+    } else {
+      cycle = 0;
+    }
+
+    x += biased_step(vx);
+    y += biased_step(vy);
+    r += biased_step(vr);
+
+    if (x < 0 || x > w) {
+      active = false;
+      return 0;
+    }
+    if (y < 0 || y > h) {
+      active = false;
+      return 0;
+    }
+
+
+    if (r == 0) {
+      r = 1;
+    }
+
+    for (int dx=-r; dx<=r; dx++) {
+      for (int dy=-r; dy<=r; dy++) {
+        int r2 = dx*dx + dy*dy;
+        if (r2 < r*r) {
+          int X = x+dx;
+          int Y = y+dy;
+          if (X >= 0 && X < w && Y >= 0 && Y < h) {
+            int idx = (x+dx) + w*(y+dy);
+            if (!ages[idx]) {
+              ages[idx] = time;
+            }
+          }
+        }
+      }
+    }
+
+    return 1;
+  }
+};
+
+
+#define NUM_DIFF_CIRCLES 8
+#define NUM_CONST_CIRCLES 8
+struct DiffusionRegion {
+  int ages[MAT_WIDTH * MAT_HEIGHT];
+  color_t color;
+  DiffusionCircle circles[NUM_DIFF_CIRCLES];
+  DiffusionCircle constantCircles[NUM_CONST_CIRCLES];
+  int fadeStartTime;
+  int time;
+  int decayTime;
+  int active;
+
+  void startDiffusion(int x, int y, int vx, int vy, color_t c) {
+    for (int i=0; i<NUM_CONST_CIRCLES; i++) {
+      constantCircles[i].x = x;
+      constantCircles[i].y = y;
+      constantCircles[i].r = 5;
+      constantCircles[i].vx = 0;
+      constantCircles[i].vy = 0;
+      constantCircles[i].vr = 0;
+      constantCircles[i].active = 1;
+    }
+    memset(ages, 0, sizeof(ages));
+    color = c;
+    for (int i=0; i<NUM_DIFF_CIRCLES; i++) {
+      circles[i].x = x;
+      circles[i].y = y;
+      circles[i].r = 1;
+      circles[i].vx = vx;
+      circles[i].vy = vy;
+      circles[i].vr = 64;
+      circles[i].active = 1;
+    }
+    time = 1;
+    active = 1;
+    fadeStartTime = 0;
+  }
+
+  void stopDiffusion() {
+    if (!fadeStartTime) {
+      fadeStartTime = time;
+    }
+  }
+
+  int age_sample(int x, int y) {
+    int X = clamp(x, 0, MAT_WIDTH-1);
+    int Y = clamp(y, 0, MAT_HEIGHT-1);
+    return ages[X + MAT_WIDTH*Y];
+  }
+
+
+#define SATURATION 300
+  void update(int period) {
+    time += 8;
+    // for (int i=0; i<NUM_DIFF_CIRCLES; i++) {
+    //   if (!constantCircles[i].update(ages, MAT_WIDTH, MAT_HEIGHT, time, period)) {
+    //     constantCircles[i].active = 1;
+    //     constantCircles[i].x = MAT_WIDTH>>1;
+    //     constantCircles[i].y = MAT_HEIGHT>>1;
+    //   }
+    // }
+
+    if (active) {
+      if (!fadeStartTime || time < SATURATION + fadeStartTime) {
+        int more = 0;
+        for (int i=0; i<NUM_DIFF_CIRCLES; i++) {
+          more = more || circles[i].update(ages, MAT_WIDTH, MAT_HEIGHT, time, period);
+        }
+        if (!more && !fadeStartTime) {
+          fadeStartTime = time;
+          active = 0;
+        }
+      }
+    }
+  }
+
+  color_t stack_color(color_t bg, int x, int y) {
+    if (!active) {
+      return bg;
+    }
+
+    int pixelAge = age_sample(x, y);
+
+    if (pixelAge == 0) {
+      return bg;
+    }
+
+    int s;
+
+    if (fadeStartTime) {
+      int saturationTime = SATURATION + pixelAge;
+      if (fadeStartTime < saturationTime) {
+        if (time < saturationTime) {
+          s = time - pixelAge;
+        } else {
+          s = 2*SATURATION + pixelAge - time;
+        }
+      } else { // already saturated
+        s = SATURATION + fadeStartTime - time;
+      }
+    } else {
+      // still growing
+      s = clamp(time - pixelAge, 0, SATURATION);
+    }
+
+    return color_lerp(bg, color, clamp(s, 0, 0xff));
+  }
+};
+
+
+DiffusionRegion pollutant0, pollutant1;
+
+
+uint8_t topography_data[MAT_WIDTH * MAT_HEIGHT];
+texture_t topography = { topography_data, MAT_WIDTH, MAT_HEIGHT };
+
 void setupTopography() {
-  memset(topography, 0, sizeof(topography));
+  memset(topography_data, 0, sizeof(topography_data));
   float X[] = { 32, 40, 60, 92, 66 };
   float Y[] = { 32, 32, 32, 46, 32 };
   float A[] = { 100, 100, 150, 100, 150 };
@@ -45,10 +241,10 @@ void setupTopography() {
         float dx = x - X[i];
         float dy = y - Y[i];
         int idx = MAT_WIDTH*y + x;
-        uint8_t topo = topography[idx];
-        topography[idx] += A[i]*exp(-(dx*dx + dy*dy)/B[i]);
-        if (topography[idx] < topo) {
-          topography[idx] = 255;
+        uint8_t topo = topography_data[idx];
+        topography_data[idx] += A[i]*exp(-(dx*dx + dy*dy)/B[i]);
+        if (topography_data[idx] < topo) {
+          topography_data[idx] = 255;
         }
       }
     }
@@ -56,25 +252,69 @@ void setupTopography() {
 }
 
 
-PollutantState pollutant0;
-PollutantState pollutant1;
-PollutantState pollutant2;
-PollutantState pollutant3;
+
+color_t lake_color(uint8_t level, uint8_t depth, uint8_t wave) {
+  if (depth > level) {
+    color_t shallow, deep;
+    deep.set(0x00, 0x00, 0xff);
+    return deep;
+
+    // if (wave) {
+    //   shallow.set(0x0f, 0x1f, 0x7f);
+    //   deep.set(0x0f, 0x1f, 0x7f);
+    // } else {
+    //   shallow.set(0, 0, 0x7f);
+    //   deep.set(0, 0, 0xff);
+    // }
+    // return color_lerp(shallow, deep, depth);
+  } else {
+    return { 0, 0, 0 };
+  }
+}
 
 
-int targetLevel = LAKE_LOW;
-PolledTimer levelTimer;
 
+void draw_lake(uint8_t level) {
+  static unsigned long t = 0;
+  static unsigned int r = 0;
+  const int T_STEP = 1;
+  const int R_STEP = 64;
 
-
-void drawLake(rgb24 *buffer, unsigned int t, uint8_t level) {
   for (int x=0; x<MAT_WIDTH; x++) {
     for (int y=0; y<MAT_HEIGHT; y++) {
-      int idx = y*MAT_WIDTH + x;
-      if (topography[idx] >= level) {
-        buffer[idx] = (rgb24){ 0, (sin8(x<<3)>>2) + (sin8(y<<3)>>2), 0xff };
+      int xt = x+t; int yt = y+t;
+
+      int xd = x + sample(displacement, xt, yt);
+      int yd = y + sample(displacement, yt, xt);
+      int xd_next = x + sample(displacement, xt+T_STEP, yt+T_STEP);
+      int yd_next = y + sample(displacement, yt+T_STEP, xt+T_STEP);
+
+      uint8_t wave = sample(waves, xd, yd);
+      uint8_t wave_next = sample(waves, xd_next, yd_next);
+
+      uint8_t depth = sample(topography, xd, yd);
+      uint8_t depth_next = sample(topography, xd_next, yd_next);
+
+      color_t c = lake_color(level, depth, wave);
+      color_t c_next = lake_color(level, depth_next, wave_next);
+      if (depth > 4) {
+        // c = color_lerp(c, pollutant.c, clamp(pollutant.time >> 4, 0, 0xf));
+        c = pollutant0.stack_color(c, xd, yd);
+        c = pollutant1.stack_color(c, xd, yd);
       }
+      if (depth_next > 4) {
+        c_next = pollutant0.stack_color(c_next, xd_next, yd_next);
+        c_next = pollutant1.stack_color(c_next, xd_next, yd_next);
+      }
+
+      matrix.drawPixel(x, y, color_lerp(c, c_next, r).value());
+
     }
+  }
+  r = adds(r, R_STEP);
+  if (r == 0xff) {
+    t += T_STEP;
+    r = 0;
   }
 }
 
@@ -84,27 +324,27 @@ void drawLake(rgb24 *buffer, unsigned int t, uint8_t level) {
 void setup() {
   Serial.begin(115200);
   Serial.println("== boot ==");
-  matrix.addLayer(&bg);
-  matrix.begin();
+
+  ProtomatterStatus status = matrix.begin();
+  Serial.print("  matrix status: ");
+  Serial.println((int)status);
+  if (status != PROTOMATTER_OK) {
+    Serial.println("BAD MATRIX STATUS; halting!");
+    for (;;);
+  }
+  Serial.println("  matrix initialization: OK");
+
   setupTopography();
+  Serial.println("  topography initialization: OK");
 
-  setupCan(0x00);
-
-  pollutant0.x = 32; pollutant0.y = 40;
-  pollutant0.angle = -32;
-  pollutant0.r = 0xff; pollutant0.g = 0xff; pollutant0.b = 0xff;
-  
-  pollutant1.x = 72; pollutant1.y = 32;
-  pollutant1.angle = 128;
-  pollutant1.r = 0x00; pollutant1.g = 0xff; pollutant1.b = 0;
-  
-  pollutant2.x = 70; pollutant2.y = 40;
-  pollutant2.angle = -96;
-  pollutant2.r = 0xff; pollutant2.g = 0x00; pollutant2.b = 0xff;
-  
-  pollutant3.x = 70; pollutant3.y = 30;
-  pollutant3.angle = 96;
-  pollutant3.r = 0xff; pollutant3.g = 0xff; pollutant3.b = 0x00;
+  pollutant0.startDiffusion(32, 32, 32, 0, { 0xff, 0, 0 });
+  pollutant1.startDiffusion(64+32, 32, -32, 0, { 0xff, 0xff, 0 });
+  Serial.println("================================================================");
+  Serial.println("================================================================");
+  Serial.println("================================================================");
+  Serial.println("================================================================");
+  Serial.println("================================================================");
+  Serial.println("================================================================");
 
   Serial.println("setup complete.");
   delay(500);
@@ -112,38 +352,21 @@ void setup() {
 
 
 void loop() {
-  static unsigned int t = 0;
-  static int level = targetLevel;
-
-  levelTimer.update();
-  // uint8_t level = 11;
-  while (bg.isSwapPending());
-
-  rgb24 *buffer = bg.backBuffer();
-  memset(buffer, 0, MAT_WIDTH * MAT_HEIGHT * sizeof(rgb24));
-
-  // update particles
-  if ((t & 7) == 0) {
-    Serial.print(level); Serial.print(" "); Serial.println(targetLevel);
-    if (level < targetLevel) {
-      level += 1;
-    } else if (level > targetLevel) {
-      level -= 1;
-    }
-    pollutant0.update(topography, MAT_WIDTH, MAT_HEIGHT, level);
-    pollutant1.update(topography, MAT_WIDTH, MAT_HEIGHT, level);
-    pollutant2.update(topography, MAT_WIDTH, MAT_HEIGHT, level);
-    pollutant3.update(topography, MAT_WIDTH, MAT_HEIGHT, level);
+  static unsigned long t = 0;
+  pollutant0.update(2);
+  pollutant1.update(2);
+  draw_lake(4);
+  matrix.show();
+  if (millis() > t) {
+    Serial.println(matrix.getFrameCount());
+    t = millis() + 1000;
+  }
+  if (millis() > 8000) {
+    pollutant0.stopDiffusion();
+    pollutant1.stopDiffusion();
   }
 
-  // draw lake + particles
-  drawLake(buffer, t, level);
-  pollutant0.render(buffer, MAT_WIDTH, MAT_HEIGHT);
-  pollutant1.render(buffer, MAT_WIDTH, MAT_HEIGHT);
-  pollutant2.render(buffer, MAT_WIDTH, MAT_HEIGHT);
-  pollutant3.render(buffer, MAT_WIDTH, MAT_HEIGHT);
-
-  bg.swapBuffers(false);
-  matrix.countFPS();
-  t += 1;
+  if (!pollutant1.active) {
+    pollutant1.startDiffusion(64+32, 32, -32, 0, { 0xff, 0xff, 0 });
+  }
 }
