@@ -1,0 +1,69 @@
+#ifndef LED_MAP_H
+#define LED_MAP_H
+
+
+#define PHOSPHORUS_FLOWA_START 54
+#define PHOSPHORUS_FLOWA_END 0
+
+#define PHOSPHORUS_FLOWB_START 54
+#define PHOSPHORUS_FLOWB_END 88
+
+#define PHOSPHORUS_RING_START 88
+#define PHOSPHORUS_RING_END 178
+
+
+#define SALT_FLOWA_START 315
+#define SALT_FLOWA_END 268
+
+#define SALT_FLOWB_START 315
+#define SALT_FLOWB_END 368
+
+#define SALT_RING_START 178
+#define SALT_RING_END 268
+
+
+#define RAINA_START 376
+#define RAINA_END 368
+
+#define RAINB_START 376
+#define RAINB_END 384
+
+#define RAINC_START 392
+#define RAINC_END 384
+
+
+#define STORMA_START 392
+#define STORMA_END 400
+
+#define STORMB_START 408
+#define STORMB_END 400
+
+#define STORMC_START 408
+#define STORMC_END 416
+
+
+#define SEDIMENT_RING_START 416
+#define SEDIMENT_RING_END 506
+
+#define SEDIMENT_FLOWA_START 506
+#define SEDIMENT_FLOWA_END 560
+
+#define SEDIMENT_FLOWB_START 596
+#define SEDIMENT_FLOWB_END 560
+
+
+#define TRASH_RING_START 596
+#define TRASH_RING_END 686
+
+#define TRASH_FLOWA_START 730
+#define TRASH_FLOWA_END 686
+
+#define TRASH_FLOWB_START 730
+#define TRASH_FLOWB_END 786
+
+
+int _length(int start, int end);
+int _addr(int start, int end, int idx);
+
+
+#endif
