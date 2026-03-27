@@ -6,6 +6,8 @@
 #include "texture.h"
 #include "color.h"
 #include "topo.h"
+#include "comms.h"
+
 
 #define MAT_WIDTH 128
 #define MAT_HEIGHT 64
@@ -122,22 +124,22 @@ struct DiffusionRegion {
   color_t color;
   DiffusionCircle circles[NUM_DIFF_CIRCLES];
   DiffusionCircle constantCircles[NUM_CONST_CIRCLES];
-  int fadeStartTime;
-  int time;
-  int decayTime;
-  int active;
+  unsigned long epoch;
+  int time, stopTime, finishTime;
+  float riseRate = 0.1;
+  float fallRate = 0.1;
+  float globalMax = 0.4;
+  int active = 0;
 
   void startDiffusion(int x, int y, int vx, int vy, color_t c) {
-    for (int i=0; i<NUM_CONST_CIRCLES; i++) {
-      constantCircles[i].x = x;
-      constantCircles[i].y = y;
-      constantCircles[i].r = 5;
-      constantCircles[i].vx = 0;
-      constantCircles[i].vy = 0;
-      constantCircles[i].vr = 0;
-      constantCircles[i].active = 1;
+    if (active) {
+      return;
     }
-    memset(ages, 0, sizeof(ages));
+    Serial.println("pollutant reset!");
+
+    epoch = millis();
+
+    memset(ages, 0, sizeof(int) * MAT_WIDTH * MAT_HEIGHT);
     color = c;
     for (int i=0; i<NUM_DIFF_CIRCLES; i++) {
       circles[i].x = x;
@@ -150,13 +152,16 @@ struct DiffusionRegion {
     }
     time = 1;
     active = 1;
-    fadeStartTime = 0;
+    stopTime = -1;
+    finishTime = -1;
   }
 
   void stopDiffusion() {
-    if (!fadeStartTime) {
-      fadeStartTime = time;
+    if (stopTime > 0) {
+      return;
     }
+    stopTime = time;
+    finishTime = 0xff*((1.0/riseRate) + (1.0/fallRate)) + time;
   }
 
   int age_sample(int x, int y) {
@@ -168,68 +173,56 @@ struct DiffusionRegion {
 
 #define SATURATION 300
   void update(int period) {
-    time += 8;
-    // for (int i=0; i<NUM_DIFF_CIRCLES; i++) {
-    //   if (!constantCircles[i].update(ages, MAT_WIDTH, MAT_HEIGHT, time, period)) {
-    //     constantCircles[i].active = 1;
-    //     constantCircles[i].x = MAT_WIDTH>>1;
-    //     constantCircles[i].y = MAT_HEIGHT>>1;
-    //   }
-    // }
+    time = millis() - epoch;
 
     if (active) {
-      if (!fadeStartTime || time < SATURATION + fadeStartTime) {
-        int more = 0;
+      active = stopTime < 0 || time < finishTime;
+      if (stopTime < 0 || time < stopTime) {
         for (int i=0; i<NUM_DIFF_CIRCLES; i++) {
-          more = more || circles[i].update(ages, MAT_WIDTH, MAT_HEIGHT, time, period);
-        }
-        if (!more && !fadeStartTime) {
-          fadeStartTime = time;
-          active = 0;
+          circles[i].update(ages, MAT_WIDTH, MAT_HEIGHT, time, period);
         }
       }
     }
   }
+
+  uint8_t pixelIntensity(int x, int y, int t) {
+    const int maxIntensity = 0xff;
+
+    int t0 = age_sample(x, y);
+    if (t0 == 0) {
+      if (stopTime > 0) {
+        int centerTime = (finishTime + stopTime) >> 1;
+        float s = ((float)maxIntensity) / (centerTime - stopTime);
+        int i = maxIntensity - s*abs(t-centerTime);
+        return clamp(globalMax * i, 0, maxIntensity);
+      } else {
+        return 0;
+      }
+    }
+
+    int tMax = t+1;
+    if (stopTime > 0) {
+      tMax = max(
+        (0xff + riseRate * t0)/riseRate, 
+        stopTime
+      );
+    }
+
+    if (t < tMax) {
+      return clamp(riseRate * (t-t0), 0, maxIntensity);
+    } else {
+      return clamp(maxIntensity - fallRate*(t-tMax), 0, maxIntensity);
+    }
+  }
+
 
   color_t stack_color(color_t bg, int x, int y) {
     if (!active) {
       return bg;
     }
 
-    int pixelAge = age_sample(x, y);
-
-    if (pixelAge == 0 || (2*SATURATION + pixelAge - time) < 0) {
-      int globalPollutionTime = fadeStartTime ? (time - fadeStartTime - 512) : 0;
-      int s = 0;
-      if (globalPollutionTime < 0) {
-        s = 0;
-      } else if (globalPollutionTime < 256) {
-        s = lerp8(0, 16, clamp(globalPollutionTime, 0, 0xff));
-      } else {
-        s = lerp8(16, 0, clamp(globalPollutionTime-256, 0, 0xff));
-      }
-      return color_lerp(bg, color, s);
-    }
-
-    int s;
-
-    if (fadeStartTime) {
-      int saturationTime = SATURATION + pixelAge;
-      if (fadeStartTime < saturationTime) {
-        if (time < saturationTime) {
-          s = time - pixelAge;
-        } else {
-          s = 2*SATURATION + pixelAge - time;
-        }
-      } else { // already saturated
-        s = SATURATION + fadeStartTime - time;
-      }
-    } else {
-      // still growing
-      s = clamp(time - pixelAge, 0, SATURATION);
-    }
-
-    return color_lerp(bg, color, clamp(s, 0, 0xff));
+    uint8_t intensity = pixelIntensity(x, y, time);
+    return color_lerp(bg, color, intensity);
   }
 };
 
@@ -342,6 +335,8 @@ void setup() {
   Serial.begin(115200);
   Serial.println("== boot ==");
 
+  setupComms();
+
   ProtomatterStatus status = matrix.begin();
   Serial.print("  matrix status: ");
   Serial.println((int)status);
@@ -355,7 +350,7 @@ void setup() {
   Serial.println("  topography initialization: OK");
 
   pollutant0.startDiffusion(32,    32,   0, 0, { 0xff, 0, 0 });
-  pollutant1.startDiffusion(64+32, 32,   0, 0, { 0xff, 0xff, 0 });
+  // pollutant1.startDiffusion(64+32, 32,   0, 0, { 0xff, 0xff, 0 });
   Serial.println("================================================================");
   Serial.println("================================================================");
   Serial.println("================================================================");
@@ -368,27 +363,70 @@ void setup() {
 }
 
 
+
+#define WATER_LOW 0.99
+#define WATER_MID 0.5
+#define WATER_HIGH 0.0
+#define WATER_RAMP_UP 0.1
+#define WATER_RAMP_DOWN 0.01
+
+
+void rampTowards(float &x, float desired, float step);
+void ramp(float &x, float desired, float up, float down);
+
+
 void loop() {
-  static unsigned long t = 0;
+  static float depth = WATER_LOW;
+
   pollutant0.update(2);
   pollutant1.update(2);
-  // float depth = 0.5 + 0.25 * (1 - sin( ((float)millis()) / 1000.0 ));
-  // float depth = 0.5 * (1 - sin( ((float)millis()) / 1000.0 ));
-  float depth = 0.99;
-  // float depth = 0.01;
-  Serial.println(depth);
-  draw_lake(0xff*depth);
-  matrix.show();
-  if (millis() > t) {
-    Serial.println(matrix.getFrameCount());
-    t = millis() + 1000;
+
+  // update water depth
+  float targetDepth = WATER_LOW;
+  if (queryState(MATRIX_STORM)) {
+    targetDepth = WATER_HIGH;
+  } else if (queryState(MATRIX_RAIN)) {
+    targetDepth = WATER_MID;
   }
-  if (millis() > 8000) {
+  ramp(depth, targetDepth, WATER_RAMP_UP, WATER_RAMP_DOWN);
+
+  if (queryState(MATRIX_RAIN)) {
+    pollutant0.startDiffusion(32, 32,   0, 0, { 0xff, 0, 0 });
+  } else {
     pollutant0.stopDiffusion();
-    pollutant1.stopDiffusion();
   }
 
-  if (!pollutant1.active) {
-    pollutant1.startDiffusion(64+32, 32, -32, 0, { 0xff, 0xff, 0 });
+  draw_lake(0xff*depth);
+  matrix.show();
+
+  if (millis() > 8000) {
+    pollutant0.stopDiffusion();
+  }
+// 
+//   if (!pollutant1.active) {
+//     pollutant1.startDiffusion(64+32, 32, -32, 0, { 0xff, 0xff, 0 });
+//   }
+}
+
+
+void ramp(float &x, float desired, float up, float down) {
+  if (x > desired) {
+    rampTowards(x, desired, down);
+  } else {
+    rampTowards(x, desired, up);
+  }
+}
+
+
+
+void rampTowards(float &x, float desired, float step) {
+  if (fabs(x - desired) < step) {
+    x = desired;
+  } else {
+    if (x < desired) {
+      x += step;
+    } else {
+      x -= step;
+    }
   }
 }
