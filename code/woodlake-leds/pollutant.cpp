@@ -113,7 +113,7 @@ void Pollutant::fill() {
 }
 
 
-void Pollutant::drain(bool water, bool &finished, bool &emit) {
+void Pollutant::drain(bool water) {
   if (ring.level > 0) {
     ring.level -= 1;
     path.polluteTrailEnd += 1;
@@ -125,11 +125,15 @@ void Pollutant::drain(bool water, bool &finished, bool &emit) {
     path.polluteTrailEnd += 1;
   }
 
-  finished = false;
+  draining = true;
   emit = false;
 
   if (path.polluteTrailStart > path.length()) {
-    finished = true;
+    draining = false;
+    path.polluteTrailStart = 0;
+    path.polluteTrailEnd = 0;
+    path.pollutantLevel = 0;
+    ring.level = 0;
   }
 
 
@@ -140,13 +144,23 @@ void Pollutant::drain(bool water, bool &finished, bool &emit) {
 
 
 
-Pollutant phosphorus;
+Pollutant phosphorus, salt, sediment, trash;
 
 
 
 void setupPollutants() {
   phosphorus.ring.start = PHOSPHORUS_RING_START;
   phosphorus.ring.end = PHOSPHORUS_RING_END;
+
+  salt.ring.start = SALT_RING_START;
+  salt.ring.end = SALT_RING_END;
+
+  sediment.ring.start = SEDIMENT_RING_START;
+  sediment.ring.end = SEDIMENT_RING_END;
+
+  trash.ring.start = TRASH_RING_START;
+  trash.ring.end = TRASH_RING_END;
+
   PollutantPathSegment *prev;
   #define START_SEGMENT(A, B) do {\
     POLLUTE.path.HEAD = new PollutantPathSegment(); \
@@ -177,8 +191,23 @@ void setupPollutants() {
   #define POLLUTE phosphorus
   START_SEGMENT(PHOSPHORUS_FLOWA_START, PHOSPHORUS_FLOWA_END);
   ADD_MIRROR(PHOSPHORUS_FLOWB_START, PHOSPHORUS_FLOWB_END);
-  ADD_SEGMENT(SALT_RING_START, SALT_RING_END);
-  ADD_SEGMENT(SALT_FLOWA_START, SALT_FLOWA_END);
+  // ADD_SEGMENT(SALT_RING_START, SALT_RING_END);
+  // ADD_SEGMENT(SALT_FLOWA_START, SALT_FLOWA_END);
+  // ADD_MIRROR(SALT_FLOWB_START, SALT_FLOWB_END);
+  #undef POLLUTE
+
+  #define POLLUTE salt
+  START_SEGMENT(SALT_FLOWA_START, SALT_FLOWA_END);
   ADD_MIRROR(SALT_FLOWB_START, SALT_FLOWB_END);
   #undef POLLUTE
+
+  #define POLLUTE sediment
+  START_SEGMENT(SEDIMENT_FLOWA_START, SEDIMENT_FLOWA_END);
+  ADD_MIRROR(SEDIMENT_FLOWB_START, SEDIMENT_FLOWB_END);
+  #undef POLLUTE
+
+  #define POLLUTE trash
+  START_SEGMENT(TRASH_FLOWA_START, TRASH_FLOWA_END);
+  ADD_MIRROR(TRASH_FLOWB_START, TRASH_FLOWB_END);
+  #undef TRASH
 }

@@ -26,7 +26,8 @@ struct PollutantPath {
 struct PollutantRing {
   int length();
   int addr(int idx);
-  int start, end, level;
+  int start, end;
+  int level = 0;
 };
 
 
@@ -34,11 +35,13 @@ struct Pollutant {
   PollutantRing ring;
   PollutantPath path;
   void fill();
-  void drain(bool, bool&, bool&);
+  void drain(bool);
+  bool draining = false;
+  bool emit = false;
 };
 
 
-extern Pollutant phosphorus;
+extern Pollutant phosphorus, salt, sediment, trash;
 
 void setupPollutants();
 void drawPollutant(OctoWS2811 &strip, Pollutant &pollutant, unsigned long color);

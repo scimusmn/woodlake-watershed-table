@@ -3,8 +3,8 @@
 #include "led-map.h"
 
 
-void RainStrip::update() {
-  bool newDrop = rand() < rate;
+void RainStrip::update(bool raining) {
+  bool newDrop = raining && (rand() < rate);
   drops = (drops << 1) | (newDrop ? 1 : 0);
 }
 
@@ -31,21 +31,21 @@ void RainZone::setup(
 }
 
 
-void RainZone::update() {
-  r0.update();
-  r1.update();
-  r2.update();
+void RainZone::update(bool raining) {
+  r0.update(raining);
+  r1.update(raining);
+  r2.update(raining);
 }
 
 
-void StormZone::update() {
-  if (rand() < lightningRate) {
+void StormZone::update(bool storming) {
+  if (storming && rand() < lightningRate) {
     lightning = 1;
   } else {
     lightning = 0;
   }
 
-  RainZone::update();
+  RainZone::update(storming);
 }
 
 
@@ -87,7 +87,9 @@ void drawStormZone(OctoWS2811 &strip, StormZone &zone) {
 
 
 RainZone rainABC;
+RainZone rainDEF;
 StormZone stormABC;
+StormZone stormDEF;
 
 void setupRain() {
   rainABC.setup(
@@ -97,12 +99,29 @@ void setupRain() {
     RAND_MAX >> 3
   );
 
+  rainDEF.setup(
+    RAIND_START, RAIND_END,
+    RAINE_START, RAINE_END,
+    RAINF_START, RAINF_END,
+    RAND_MAX >> 3
+  );
+
   stormABC.setup(
     STORMA_START, STORMA_END,
     STORMB_START, STORMB_END,
     STORMC_START, STORMC_END,
     RAND_MAX >> 2
   );
+
+  stormDEF.setup(
+    STORMD_START, STORMD_END,
+    STORME_START, STORME_END,
+    STORMF_START, STORMF_END,
+    RAND_MAX >> 2
+  );
+
   stormABC.lightning = 0;
+  stormDEF.lightning = 0;
   stormABC.lightningRate = RAND_MAX >> 5;
+  stormDEF.lightningRate = RAND_MAX >> 5;
 }

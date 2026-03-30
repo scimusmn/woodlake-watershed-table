@@ -4,7 +4,7 @@
 #include <OctoWS2811.h>
 
 struct RainStrip {
-  void update();
+  void update(bool);
 
   int start, end;
   int rate;
@@ -14,20 +14,22 @@ struct RainStrip {
 
 struct RainZone {
   void setup(int start0, int end0, int start1, int end1, int start2, int end2, int rate);
-  void update();
+  void update(bool);
 
   RainStrip r0, r1, r2;
 };
 
 
 struct StormZone : public RainZone {
-  void update();
+  void update(bool);
   int lightning, lightningRate;
 };
 
 
 extern RainZone rainABC;
+extern RainZone rainDEF;
 extern StormZone stormABC;
+extern StormZone stormDEF;
 
 
 void setupRain();
