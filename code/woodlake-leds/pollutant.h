@@ -3,6 +3,8 @@
 
 #include <OctoWS2811.h>
 
+#define RING_SCALE 20
+
 struct PollutantPathSegment {
   int length();
   int addr(int idx);

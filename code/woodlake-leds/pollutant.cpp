@@ -91,7 +91,7 @@ void drawPollutantPath(OctoWS2811 &strip, PollutantPath &path, unsigned long pol
 
 
 void drawPollutantRing(OctoWS2811 &strip, PollutantRing &ring, unsigned long polluteColor) {
-  for (int i=0; i<ring.level; i++) {
+  for (int i=0; i<ring.level/RING_SCALE; i++) {
     strip.setPixel(ring.addr(i), polluteColor);
   }
 }
@@ -104,9 +104,9 @@ void drawPollutant(OctoWS2811 &strip, Pollutant &pollutant, unsigned long color)
 
 
 void Pollutant::fill() {
-  ring.level += 1;
-  if (ring.level > ring.length()) {
-    ring.level = ring.length();
+  ring.level += RING_SCALE;
+  if (ring.level > RING_SCALE*ring.length()) {
+    ring.level = RING_SCALE*ring.length();
   }
   path.polluteTrailStart = 0;
   path.polluteTrailEnd = 0;
@@ -137,7 +137,10 @@ void Pollutant::drain(bool water) {
   }
 
 
-  if (path.polluteTrailEnd > path.length()) {
+  if (
+    path.polluteTrailEnd > path.length() && 
+    (path.polluteTrailEnd - path.length() < path.pollutantLevel)
+  ) {
     emit = true;
   }
 }

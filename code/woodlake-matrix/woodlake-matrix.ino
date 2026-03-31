@@ -12,20 +12,20 @@
 
 DiffusionRegion phosphorus, salt, trash, sediment;
 
-#define PHOSPHORUS_X 32
+#define PHOSPHORUS_X 80 
 #define PHOSPHORUS_Y 32
 #define PHOSPHORUS_VX 0
 #define PHOSPHORUS_VY 0
 #define PHOSPHORUS_COLOR { 0x00, 0xff, 0x00 }
 
-#define SALT_X 32
-#define SALT_Y 32
+#define SALT_X 95
+#define SALT_Y 42
 #define SALT_VX 0
 #define SALT_VY 0
 #define SALT_COLOR { 0xff, 0xff, 0xff }
 
 #define TRASH_X 32
-#define TRASH_Y 32
+#define TRASH_Y 42
 #define TRASH_VX 0
 #define TRASH_VY 0
 #define TRASH_COLOR { 0xff, 0x00, 0x00 }
