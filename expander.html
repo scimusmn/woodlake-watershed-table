@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>pollution</title>
+    <script>
+
+
+const WIDTH = 128;
+const HEIGHT = 64;
+
+
+window.onload = () => {
+  console.log('hello, world!');
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = canvas.width * HEIGHT/WIDTH;
+  document.body.append(canvas);
+  const ctx = canvas.getContext('2d');
+
+  ctx.lineWidth = 0.09;
+  ctx.setTransform(canvas.width/WIDTH, 0, 0, canvas.height/HEIGHT, 0, 0);
+
+  const drawPixel = (x, y, color) => {
+    ctx.fillStyle = color;
+    ctx.fillRect(x, y, 1, 1);
+  }
+
+
+  const ages = [ ...Array(WIDTH * HEIGHT) ].map(() => 0);
+  
+  const circles = [ ...Array(10) ].map(() => ({
+    //x: Math.floor(Math.random() * WIDTH), y: Math.floor(Math.random() * HEIGHT),
+    x: 32, y: 32,
+    r: 5,
+    r_frac: 1,
+    vx: 32, vy: 0,
+  }));
+  
+  
+  function drawAge(x, y, time) {
+    const age = ages[x + WIDTH*y];
+    if (age === 0) {
+      return;
+    } else {
+      const color = `rgb(${time - age}, 0, 0)`;
+      drawPixel(x, y, color);
+    }
+  }
+
+  function rand8() {
+    return Math.floor(256*Math.random());
+  }
+  
+  function updateCircle(circle, time) {
+    // circle.r_frac += rand8() > 0xf0 ? 1 : 0;
+    // circle.r = Math.floor(circle.r_frac);
+    const vx = circle.vx + rand8();
+    const vy = circle.vy + rand8();
+    circle.x += (vx > 170) ? 1 : (vx < 85 ? -1 : 0);
+    circle.y += (vy > 170) ? 1 : (vy < 85 ? -1 : 0);
+    for (let dx=-circle.r; dx <= circle.r; dx++) {
+      for (let dy=-circle.r; dy <= circle.r; dy++) {
+        const r2 = dx*dx + dy*dy;
+        if (r2 <= circle.r*circle.r) {
+          const x = circle.x + dx;
+          const y = circle.y + dy;
+          const idx = x + WIDTH*y;
+          if (ages[idx] === 0) {
+            ages[idx] = time;
+          }
+        }
+      }
+    }
+  }
+
+
+
+
+  let time = 1;
+  function draw() {
+    ctx.clearRect(0, 0, WIDTH, HEIGHT);
+
+    for (let i=0; i<circles.length; i++) {
+      updateCircle(circles[i], time);
+    }
+
+    for (let x=0; x<WIDTH; x++) {
+      for (let y=0; y<HEIGHT; y++) {
+        drawAge(x, y, time);
+      }
+    }
+
+    time += 1;
+    console.log(time);
+
+    for (let y=0; y<HEIGHT; y++) {
+      console.log(ages.filter((_, i) => i >= y*WIDTH && i < (y+1)*WIDTH));
+    }
+
+    requestAnimationFrame(draw);
+  }
+
+  requestAnimationFrame(draw);
+};
+
+    </script>
+  </head>
+  <body></body>
+</html>

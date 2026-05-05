@@ -19,13 +19,13 @@ DiffusionRegion phosphorus, salt, trash, sediment;
 #define PHOSPHORUS_COLOR { 0x00, 0xff, 0x00 }
 
 #define SALT_X 95
-#define SALT_Y 42
+#define SALT_Y 22
 #define SALT_VX 0
 #define SALT_VY 0
 #define SALT_COLOR { 0xff, 0xff, 0xff }
 
 #define TRASH_X 32
-#define TRASH_Y 42
+#define TRASH_Y 22
 #define TRASH_VX 0
 #define TRASH_VY 0
 #define TRASH_COLOR { 0xff, 0x00, 0x00 }
@@ -72,7 +72,7 @@ void draw_lake(uint8_t level, bool raining, bool storming) {
       uint8_t wave = sample(waves, xd, yd);
       uint8_t wave_next = sample(waves, xd_next, yd_next);
 
-      uint8_t depth = 0xff - sample(topography, x, y);
+      uint8_t depth = 0xff - sample(topography, TOPO_WIDTH-x, TOPO_HEIGHT-y);
       uint8_t depth_next = 0xff - sample(topography, xd_next, yd_next);
 
       if (depth > level && (storming || raining) && rand() < RAND_MAX>>5) {
@@ -137,11 +137,14 @@ void setup() {
 
 
 #define WATER_LOW 0.99
-#define WATER_MID 0.5
+#define WATER_MID 0.2
 #define WATER_HIGH 0.0
 
-#define WATER_RAMP_FILL 0.02
-#define WATER_RAMP_DRAIN 0.05
+#define STORM_RAMP_FILL 0.02
+#define STORM_RAMP_DRAIN 0.05
+
+#define RAIN_RAMP_FILL 0.01
+#define RAIN_RAMP_DRAIN 0.025
 
 
 void rampTowards(float &x, float desired, float step);
@@ -150,15 +153,21 @@ void ramp(float &x, float desired, float up, float down);
 
 void loop() {
   static float depth = WATER_LOW;
+  static float rampFill = RAIN_RAMP_FILL;
+  static float rampDrain = RAIN_RAMP_FILL;
 
   // update water depth
   float targetDepth = WATER_LOW;
   if (queryState(MATRIX_STORM)) {
     targetDepth = WATER_HIGH;
+    rampFill = STORM_RAMP_FILL;
+    rampDrain = STORM_RAMP_DRAIN;
   } else if (queryState(MATRIX_RAIN)) {
     targetDepth = WATER_MID;
+    rampFill = RAIN_RAMP_FILL;
+    rampDrain = RAIN_RAMP_DRAIN;
   }
-  ramp(depth, targetDepth, WATER_RAMP_FILL, WATER_RAMP_DRAIN);
+  ramp(depth, targetDepth, rampFill, rampDrain);
 
   // diffusion regions
   

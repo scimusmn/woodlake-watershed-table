@@ -84,6 +84,20 @@
 #define TRASH_FLOWB_START 778
 #define TRASH_FLOWB_END 834
 
+#define PHOSPHORUS_PIPE_START 935
+#define PHOSPHORUS_PIPE_END 834
+
+#define TRASH_PIPE_START 1811
+#define TRASH_PIPE_END 1668
+
+#define LAKE_CORE_START 2502
+#define LAKE_CORE_END 2645
+
+#define SEDIMENT_PIPE_START 3410
+#define SEDIMENT_PIPE_END 3336
+
+#define SALT_PIPE_START 4310
+#define SALT_PIPE_END 4170
 
 int _length(int start, int end);
 int _addr(int start, int end, int idx);

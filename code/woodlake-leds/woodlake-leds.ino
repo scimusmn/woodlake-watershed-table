@@ -6,13 +6,15 @@
 #include "pollutant.h"
 #include "rain.h"
 #include "comms.h"
+#include "led-map.h"
 
 
 #define STRIP_LEN 834
-byte stripPins[] = { 2 };
+byte stripPins[] = { 9, 8, 7, 4, 3, 2 };
 DMAMEM int displayBuffer[STRIP_LEN*6];
+int drawBuffer[STRIP_LEN*6];
 OctoWS2811 strip(
-  STRIP_LEN, displayBuffer, nullptr, 
+  STRIP_LEN, displayBuffer, drawBuffer,
   WS2811_RGB | WS2811_800kHz, sizeof(stripPins), stripPins
 );
 
@@ -55,7 +57,7 @@ void setup() {
   smm::setup();
 
   strip.begin();
-  memset(displayBuffer, 0, sizeof(displayBuffer));
+  memset(drawBuffer, 0, sizeof(drawBuffer));
   strip.show();
 
   setupPollutants();
@@ -146,7 +148,13 @@ void loop() {
   }
 
   // draw to led strip
-  memset(displayBuffer, 0, sizeof(displayBuffer));
+  memset(drawBuffer, 0, sizeof(drawBuffer));
+
+  // under-table lake
+  for (size_t i=LAKE_CORE_START; i<LAKE_CORE_END; i++) {
+    strip.setPixel(i, 0x0000ff);
+  }
+
 
   drawRainZone(strip, rainABC);
   drawRainZone(strip, rainDEF);
@@ -155,7 +163,7 @@ void loop() {
 
   drawPollutant(strip, phosphorus, 0xff0000);
   drawPollutant(strip, salt,       0xffffff);
-  drawPollutant(strip, sediment,   0xffff00);
+  drawPollutant(strip, sediment,   0x3fff00);
   drawPollutant(strip, trash,      0x00ff00);
 
   strip.show();

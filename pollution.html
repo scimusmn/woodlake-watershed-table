@@ -8,8 +8,11 @@
 
 //let field = [ ...Array(64).keys() ].map(x => [ ...Array(64).keys() ].map(y => [y < 32 ? 10 : -10, x < 32 ? -10 : 10 ]));
 
-let field = [ ...Array(64).keys() ].map(x => [ ...Array(64).keys() ].map(y => [0, 0]));
-
+const WIDTH = 32;
+const HEIGHT = 32;
+let field = [ ...Array(WIDTH).keys() ].map(x => [ ...Array(HEIGHT).keys() ].map(y => [0, 0]));
+const CX = Math.floor(WIDTH/2);
+const CY = Math.floor(HEIGHT/2);
 
 function lerp(a, b, x) {
   return a*(1-x) + b*x;
@@ -33,33 +36,41 @@ function interpolate(field, x, y) {
 
 function advect(field, s) {
   return field.map((col, x) => col.map(([vx, vy], y) => {
-    const [ ax, ay ] = interpolate(field, x-vx, y-vy);
+    let r = Math.sqrt(vx*vx + vy*vy);
+    if (r == 0) {
+      r = 1;
+    }
+    if (r !== r) {
+      console.log(x, y, vx, vy);
+      return [ 0, 0 ];
+    }
+    const [ ax, ay ] = interpolate(field, x-(vx/r), y-(vy/r));
     return [ (1-s)*vx + s*ax, (1-s)*vy + s*ay ];
   }));
 }
 
 
 function divGrad(field, x, y) {
-  const v = [ -1, 0, 1 ].map(X => [-1, 0, 1].map(Y => (field[x+X] ?? [])[y+Y] ?? [0,0])).flat();
+  const v = [ -1, 0, 1 ].map(Y => [1, 0, -1].map(X => (field[x+X] ?? [])[y+Y] ?? [0,0])).flat();
   const X = v.map(([x, y]) => x);
   const Y = v.map(([x, y]) => y);
 
   return [
-    X[0]-Y[0] - 2*X[1] + X[2]+Y[2] +
-    2*X[3] - 4*X[4] + 2*X[5] +
-    X[6]+Y[6] - 2*X[7] + X[8]-Y[8],
+    X[0]-Y[0] - (2*X[1]) + X[2]+Y[2] +
+    (2*X[3]) - (4*X[4]) + (2*X[5]) +
+    X[6]+Y[6] - (2*X[7]) + X[8]-Y[8],
 
-    -X[0]+Y[0] + 2*Y[1] + X[2]+Y[2] +
-    -2*Y[3] - 4*Y[4] - 2*Y[5] +
-    X[6]+Y[6] + 2*Y[7] - X[8]+Y[8]
+    -X[0]+Y[0] + (2*Y[1]) + X[2]+Y[2] +
+    -(2*Y[3]) - (4*Y[4]) - (2*Y[5]) +
+    X[6]+Y[6] + (2*Y[7]) - X[8]+Y[8]
   ];
 }
 
 
-function stripDiv(field) {
+function stripDiv(field, amt) {
   return field.map((col, x) => col.map(([vx, vy], y) => {
     const [gx, gy] = divGrad(field, x, y);
-    return [vx + 0.125*gx, vy + 0.125*gy];
+    return [vx + amt*gx, vy + amt*gy];
   }));
 }
 
@@ -97,16 +108,26 @@ window.onload = () => {
   const ctx = canvas.getContext('2d');
 
   ctx.lineWidth = 0.09;
-  ctx.setTransform(1024/64, 0, 0, 1024/64, 0, 0);
+  const scale = 64;
+  ctx.setTransform(1024/scale, 0, 0, 1024/scale, 0.5*1024/scale, 0.5*1024/scale);
 
   const drawVector = (x, y, vx, vy, head) => {
+    if (vx == 0 && vy == 0) {
+      return;
+    }
+    const [ tx, ty ] = [ x+vx, y+vy ];
+    const angle = Math.atan2(vy, vx);
     ctx.beginPath();
     ctx.moveTo(x, y);
     ctx.lineTo(x+vx, y+vy);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(x+vx, y+vy, head, 0, 2*Math.PI);
-    ctx.fill();
+    ctx.moveTo(tx - 0.25*Math.cos(angle+1), ty - 0.25*Math.sin(angle+1));
+    ctx.lineTo(tx, ty);
+    ctx.lineTo(tx - 0.25*Math.cos(angle-1), ty - 0.25*Math.sin(angle-1));
+    ctx.stroke();
+    // ctx.arc(x+vx, y+vy, head, 0, 2*Math.PI);
+    // ctx.fill();
   }
 
   const drawField = (field) => field.forEach((col, x) => col.forEach((v, y) => {
@@ -118,22 +139,36 @@ window.onload = () => {
   ctx.strokeStyle = '#ff0000';
   ctx.fillStyle = '#ff0000';
 
-  const particles = [ ...Array(100) ].map(() => new Particle(64*Math.random(), 64*Math.random()));
+  // const particles = [ ...Array(100) ].map(() => new Particle(64*Math.random(), 64*Math.random()));
 
   function next() {
     ctx.clearRect(-64, -64, 1024, 1024);
-    field = advect(field, 0.1);
-    field[10][32] = [10, 0];
-    field[54][32] = [-10, 0];
-    for (let i=0; i<50; i++) {
-      field = stripDiv(field);
+    field = advect(field, 0.8);
+field[1][CY] = [ 8, 0 ];
+field[1][CY+1] = [ 8, 0 ];
+field[2][CY] = [ 8, 0 ];
+field[2][CY+2] = [ 8, 0 ];
+
+field[WIDTH-2][CY] = [ -8, 0 ];
+field[WIDTH-2][CY+1] = [ -8, 0 ];
+field[WIDTH-3][CY] = [ -8, 0 ];
+field[WIDTH-3][CY+1] = [ -8, 0 ];
+
+
+    // field[32][32] = [1, 1];
+    // field[41][32] = [-1, -1];
+    const n = 3;
+    for (let i=0; i<n; i++) {
+      field = stripDiv(field, 0.1);
     }
-    particles.forEach(p => p.update(field));
+    // particles.forEach(p => p.update(field));
     drawField(field);
-    particles.forEach(p => p.draw(ctx));
+    // particles.forEach(p => p.draw(ctx));
+    requestAnimationFrame(next);
   }
-  setInterval(next, 10);
+  requestAnimationFrame(next());
 };
+
     </script>
   </head>
   <body></body>

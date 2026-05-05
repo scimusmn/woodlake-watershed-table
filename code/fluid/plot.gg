@@ -1,0 +1,8 @@
+#!/usr/bin/env gnuplot
+
+set terminal qt
+set xrange [-1:128]
+set yrange [-1:64]
+plot 'vec' u 1:2:3:4 w vectors
+bind all "alt-End" "exit gnuplot"
+pause mouse close
